@@ -24,7 +24,8 @@ export default async (req) => {
       Referer: ORIGIN + '/',
     };
 
-    const MAX_PAGES = 10;
+    // 原站分页"下一页链接"不可靠 (10 页后链接消失但仍有图), 上限放到 30 页兜底
+    const MAX_PAGES = 30;
     const allImages = [];
     let model = '';
     let title = '';
@@ -49,20 +50,12 @@ export default async (req) => {
       if (!html || html.length < 200) { if (page === 1) fetchError = '原站返回内容过短'; break; }
       pagesFetched = page;
 
-      // 提取大图 (p*.mmdb.cc 的图片, 兼容 min-height 样式)
-      const imgRegex = /<img[^>]*?\bsrc="https:\/\/p\d+\.mmdb\.cc\/[^"]+?\.(?:jpg|jpeg|png)"/gi;
-      let m, found = 0;
-      while ((m = imgRegex.exec(html)) !== null) {
-        allImages.push(m[0].replace(/^<img[^>]*?src="/, '').replace(/"$/, ''));
-        found++;
-      }
-      // 兜底: 直接匹配所有 p 域图片 URL
-      if (found === 0) {
-        const bare = html.match(/https:\/\/p\d+\.mmdb\.cc\/[a-z0-9\/\-]+?\.(?:jpg|jpeg|png)/gi) || [];
-        for (const u of bare) allImages.push(u);
-        found = bare.length;
-      }
-      if (found === 0) break;
+      // 只取属于本图集的大图: p*.mmdb.cc/file/.../<pid>/ 路径 (排除 cdn 推荐位)
+      // 本图集图片: p*.mmdb.cc/file/YYYYMMDD/<pid>/NNNNNNNN.jpg (排除 cdn 推荐位)
+      const albumPattern = 'https://p[0-9]+\\.mmdb\\.cc/file/[0-9]+/' + pid + '/[0-9]+\\.jpg';
+      const found = html.match(new RegExp(albumPattern, 'gi')) || [];
+      for (const u of found) allImages.push(u);
+      if (found.length === 0) break;
 
       if (page === 1) {
         const modelMatch = html.match(/href="\/model\/([^\/"]+)\.html/);
@@ -71,7 +64,7 @@ export default async (req) => {
         if (titleMatch) title = titleMatch[1].trim();
       }
 
-      if (page < MAX_PAGES && !html.includes(`/pic/${pid}-${page + 1}.html`)) break;
+      // 原站分页"下一页链接"不可靠 (10 页后链接消失但仍有图), 抓满 MAX_PAGES 或某页无图为止
       await new Promise((r) => setTimeout(r, 150));
     }
 
