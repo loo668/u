@@ -28,7 +28,8 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-top:16px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:transform .15s,border-color .15s}
 .card:hover{transform:translateY(-2px);border-color:var(--accent2)}
-.card .cover{aspect-ratio:3/4;background:#1c2028 url() center/cover no-repeat}
+.card .cover{aspect-ratio:3/4;background:#1c2028}
+.card .cover img{width:100%;height:100%;object-fit:cover;display:block;background:#1c2028 center/cover no-repeat}
 .card .meta{padding:10px 12px}
 .card .m-title{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card .m-sub{margin-top:4px;color:var(--sub);font-size:12px;display:flex;gap:8px;flex-wrap:wrap}
@@ -144,9 +145,9 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
 
   function cardHTML(a){
     var cover=a.cover?proxyImg(a.cover):'';
-    var coverAttr=cover?'background-image:url("'+cover+'")':'';
+    var coverImg=cover?'<img loading="lazy" src="'+cover+'" alt="">':'';
     return '<div class="card" data-pid="'+a.id+'">'
-      +'<div class="cover" '+coverAttr+'></div>'
+      +'<div class="cover">'+coverImg+'</div>'
       +'<div class="meta">'
       +'<div class="m-title" title="'+esc(a.title)+'">'+esc(a.title||'未命名')+'</div>'
       +'<div class="m-sub">'
