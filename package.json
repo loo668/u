@@ -1,0 +1,15 @@
+{
+  "name": "meirentu-mirror",
+  "version": "1.0.0",
+  "description": "meirentu.cc 结构镜像 · 图集大图实时拉取原站 (不存本地) · 全中文",
+  "main": "index.js",
+  "scripts": {
+    "build": "node scripts/build-site.mjs",
+    "dev": "netlify dev",
+    "deploy": "netlify deploy --prod"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "netlify-cli": "^18.0.0"
+  }
+}

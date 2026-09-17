@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>图集镜像</title>
+<style>
+:root{
+  --bg:#0f1115;--panel:#171a21;--line:#232833;--txt:#e6e8ee;--sub:#9aa3b2;
+  --accent:#4f8cff;--accent2:#7aa7ff;--radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--txt);font:14px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:inherit;text-decoration:none}
+#app{max-width:1280px;margin:0 auto;padding:0 16px 40px}
+header{position:sticky;top:0;background:rgba(15,17,21,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);z-index:10}
+header .bar{max-width:1280px;margin:0 auto;padding:14px 16px;display:flex;gap:14px;align-items:center}
+header .logo{font-weight:700;font-size:16px;letter-spacing:.5px}
+header input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;color:var(--txt);outline:none}
+header input:focus{border-color:var(--accent)}
+header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
+.chips{display:flex;gap:8px;padding:12px 16px;overflow-x:auto;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:999px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap}
+.chip:hover{border-color:var(--accent2)}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-top:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:transform .15s,border-color .15s}
+.card:hover{transform:translateY(-2px);border-color:var(--accent2)}
+.card .cover{aspect-ratio:3/4;background:#1c2028 url() center/cover no-repeat}
+.card .meta{padding:10px 12px}
+.card .m-title{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .m-sub{margin-top:4px;color:var(--sub);font-size:12px;display:flex;gap:8px;flex-wrap:wrap}
+.badge{display:inline-block;background:#11151c;border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:11px;color:var(--sub)}
+.detail{display:flex;gap:20px;flex-wrap:wrap;margin-top:16px}
+.detail .info{width:280px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px}
+.detail .info h2{font-size:16px;margin-bottom:8px}
+.detail .info p{color:var(--sub);font-size:13px;margin-top:6px}
+.detail .photos{flex:1;min-width:320px;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;align-content:start}
+.photo{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.photo img{width:100%;aspect-ratio:3/4;object-fit:cover;display:block;background:#1c2028 center/cover no-repeat}
+.photo .cap{padding:8px 10px;color:var(--sub);font-size:12px}
+.loading{padding:40px;text-align:center;color:var(--sub)}
+.spinner{display:inline-block;width:28px;height:28px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{padding:60px 0;text-align:center;color:var(--sub)}
+.back{display:inline-block;margin:16px 0;color:var(--accent2);cursor:pointer;font-size:13px}
+.back:hover{text-decoration:underline}
+#lb{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:100;display:none;align-items:center;justify-content:center;flex-direction:column}
+#lb.show{display:flex}
+#lb img{max-width:92vw;max-height:86vh;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+#lb .lbcap{color:#fff;margin-top:12px;font-size:14px}
+#lb .lbclose{position:absolute;top:14px;right:18px;color:#fff;font-size:32px;cursor:pointer;line-height:1}
+#lb .lbprev,#lb .lbnext{position:absolute;top:50%;transform:translateY(-50%);color:#fff;font-size:44px;cursor:pointer;padding:16px;user-select:none;opacity:.7}
+#lb .lbprev{left:8px}
+#lb .lbnext{right:8px}
+#lb .lbprev:hover,#lb .lbnext:hover{opacity:1}
+@media(max-width:720px){.detail{flex-direction:column}.detail .info{width:100%}.grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="logo">图集镜像</div>
+    <input id="q" type="search" placeholder="搜索标题 / 模特…" autocomplete="off">
+    <span class="cnt" id="cnt"></span>
+  </div>
+  <div class="chips" id="chips"></div>
+</header>
+<div id="app"></div>
+
+<div id="lb">
+  <div class="lbclose" id="lbclose">×</div>
+  <div class="lbprev" id="lbprev">‹</div>
+  <img id="lbimg" alt="">
+  <div class="lbnext" id="lbnext">›</div>
+  <div class="lbcap" id="lbcap"></div>
+</div>
+
+<script>
+(function(){
+  var DATA=null,ALBUMS=[],GROUPS=[];
+  var state={group:'',q:''};
+  var app=document.getElementById('app');
+  var qEl=document.getElementById('q');
+  var cntEl=document.getElementById('cnt');
+  var chipsEl=document.getElementById('chips');
+
+  // ---------- 灯箱 ----------
+  var lb=document.getElementById('lb'),lbimg=document.getElementById('lbimg'),
+      lbcap=document.getElementById('lbcap');
+  var lbList=[],lbIdx=0;
+  function lbShow(list,i){
+    lbList=list;lbIdx=i;
+    lbImgSet(i);
+    lb.classList.add('show');
+    document.body.style.overflow='hidden';
+  }
+  function lbImgSet(i){
+    if(i<0||i>=lbList.length)return;
+    lbIdx=i;
+    var u=lbList[i];
+    lbimg.src=u;
+    lbcap.textContent=(i+1)+' / '+lbList.length;
+  }
+  function lbHide(){lb.classList.remove('show');lbimg.src='';document.body.style.overflow='';}
+  document.getElementById('lbclose').onclick=lbHide;
+  document.getElementById('lbprev').onclick=function(){lbImgSet(lbIdx-1)};
+  document.getElementById('lbnext').onclick=function(){lbImgSet(lbIdx+1)};
+  lb.onclick=function(e){if(e.target===lb)lbHide()};
+  document.addEventListener('keydown',function(e){
+    if(!lb.classList.contains('show'))return;
+    if(e.key==='Escape')lbHide();
+    if(e.key==='ArrowLeft')lbImgSet(lbIdx-1);
+    if(e.key==='ArrowRight')lbImgSet(lbIdx+1);
+  });
+
+  function proxyImg(u){return '/img?u='+encodeURIComponent(u)}
+
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+
+  // ---------- 路由 ----------
+  function parseHash(){
+    var h=location.hash||'';
+    var m=h.match(/^#\/group\/(\w+)/);
+    if(m)return{view:'group',group:m[1]};
+    m=h.match(/^#\/album\/(\d+)/);
+    if(m)return{view:'album',pid:m[1]};
+    return{view:'home'};
+  }
+
+  function filtered(){
+    var q=state.q.trim().toLowerCase();
+    return ALBUMS.filter(function(a){
+      if(state.group && a.group!==state.group)return false;
+      if(q){
+        var hay=(a.title+' '+a.model).toLowerCase();
+        if(hay.indexOf(q)<0)return false;
+      }
+      return true;
+    });
+  }
+
+  function cardHTML(a){
+    var cover=a.cover?proxyImg(a.cover):'';
+    var coverAttr=cover?'background-image:url("'+cover+'")':'';
+    return '<div class="card" data-pid="'+a.id+'">'
+      +'<div class="cover" '+coverAttr+'></div>'
+      +'<div class="meta">'
+      +'<div class="m-title" title="'+esc(a.title)+'">'+esc(a.title||'未命名')+'</div>'
+      +'<div class="m-sub">'
+      +(a.model?'<span class="badge">'+esc(a.model)+'</span>':'')
+      +(a.date?'<span class="badge">'+esc(a.date)+'</span>':'')
+      +'<span class="badge">'+esc(a.group)+'</span>'
+      +'</div>'
+      +'</div>'
+      +'</div>';
+  }
+
+  function renderChips(){
+    var html='<span class="chip '+(state.group?'':'on')+'" data-g="">全部</span>';
+    for(var i=0;i<GROUPS.length;i++){
+      var g=GROUPS[i];
+      html+='<span class="chip '+(state.group===g?'on':'')+'" data-g="'+esc(g)+'">'+esc(g)+'</span>';
+    }
+    chipsEl.innerHTML=html;
+    chipsEl.querySelectorAll('.chip').forEach(function(c){
+      c.onclick=function(){
+        state.group=this.getAttribute('data-g')||'';
+        // 如果在图集页就回到首页, 否则原地刷新
+        if(location.hash && location.hash.indexOf('#/album/')===0){
+          location.hash='';
+        }
+        render();
+      };
+    });
+  }
+
+  function renderHome(list){
+    var html='';
+    if(!list.length){
+      html='<div class="empty">没有匹配的图集</div>';
+    }else{
+      var grid='';
+      for(var i=0;i<list.length;i++)grid+=cardHTML(list[i]);
+      html='<div class="grid">'+grid+'</div>';
+    }
+    app.innerHTML=html;
+    app.querySelectorAll('.card').forEach(function(c){
+      c.onclick=function(){location.hash='#/album/'+this.getAttribute('data-pid')};
+    });
+  }
+
+  function renderGroup(name){
+    var list=ALBUMS.filter(function(a){return a.group===name});
+    cntEl.textContent=list.length+' 个图集 · '+esc(name);
+    var html='';
+    if(!list.length)html='<div class="empty">该分类下暂无图集</div>';
+    else{
+      var grid='';
+      for(var i=0;i<list.length;i++)grid+=cardHTML(list[i]);
+      html='<div class="grid">'+grid+'</div>';
+    }
+    app.innerHTML=html;
+    app.querySelectorAll('.card').forEach(function(c){
+      c.onclick=function(){location.hash='#/album/'+this.getAttribute('data-pid')};
+    });
+  }
+
+  function renderAlbum(pid){
+    app.innerHTML='<div class="loading"><div class="spinner"></div><p>正在从原站实时加载全部大图…</p></div>';
+    cntEl.textContent='图集 '+esc(pid);
+    fetch('/api/album/'+pid)
+      .then(function(r){return r.json()})
+      .then(function(d){
+        var list=d.images||[];
+        var photos='';
+        for(var i=0;i<list.length;i++){
+          var u=list[i];
+          photos+='<div class="photo" data-i="'+i+'">'
+            +'<img loading="lazy" src="'+proxyImg(u)+'" alt="">'
+            +'<div class="cap">'+(i+1)+' / '+list.length+'</div>'
+            +'</div>';
+        }
+        app.innerHTML=
+          '<div class="back" id="back">← 返回</div>'
+          +'<div class="detail">'
+            +'<div class="info">'
+              +'<h2>'+esc(d.title||'图集 '+esc(pid))+'</h2>'
+              +(d.model?'<p>模特：<span class="badge">'+esc(d.model)+'</span></p>':'')
+              +'<p>共 <strong>'+list.length+'</strong> 张大图</p>'
+            +'</div>'
+            +'<div class="photos">'+(photos||'<div class="empty">未能获取大图</div>')+'</div>'
+          +'</div>';
+        document.getElementById('back').onclick=function(){history.back()};
+        app.querySelectorAll('.photo').forEach(function(p){
+          p.onclick=function(){
+            lbShow(list,parseInt(this.getAttribute('data-i'),10));
+          };
+        });
+      })
+      .catch(function(e){
+        app.innerHTML='<div class="empty">加载失败：'+esc(e.message)+'</div>';
+      });
+  }
+
+  function render(){
+    var route=parseHash();
+    renderChips();
+    if(route.view==='album'){
+      renderAlbum(route.pid);
+    }else if(route.view==='group'){
+      renderGroup(route.group);
+    }else{
+      var list=filtered();
+      cntEl.textContent=list.length+' 个图集';
+      renderHome(list);
+    }
+  }
+
+  qEl.addEventListener('input',function(){
+    state.q=this.value;
+    if(parseHash().view==='album')return;
+    var list=filtered();
+    cntEl.textContent=list.length+' 个图集';
+    renderHome(list);
+  });
+
+  window.addEventListener('hashchange',function(){
+    render();
+  });
+
+  // ---------- 加载数据 ----------
+  fetch('/data/site.json')
+    .then(function(r){return r.json()})
+    .then(function(d){
+      DATA=d;GROUPS=d.groups||[];ALBUMS=d.albums||[];
+      render();
+    })
+    .catch(function(e){
+      app.innerHTML='<div class="empty">数据加载失败：'+esc(e.message)+'</div>';
+    });
+})();
+</script>
+</body>
+</html>
