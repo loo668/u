@@ -91,7 +91,6 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
 <header>
   <div class="bar">
     <div class="logo">图集镜像</div>
-    <input id="q" type="search" placeholder="搜索标题 / 模特…" autocomplete="off">
     <span class="cnt" id="cnt"></span>
   </div>
   <div class="chips" id="chips"></div>
@@ -114,7 +113,7 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
 (function(){
   var GROUPS=[];            // 专题导航 [{slug,name}] 来自源站首页实时数据
   var app=document.getElementById('app');
-  var qEl=document.getElementById('q');
+  // 搜索框已移除: 源站 /?s= 搜索不实际过滤(返回固定列表), /plus/search/ 404, 保留会误导用户
   var cntEl=document.getElementById('cnt');
   var chipsEl=document.getElementById('chips');
 
@@ -298,23 +297,6 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
       });
   }
 
-  // 搜索: 实时拉源站 /?s=<kw>
-  function renderSearch(kw){
-    cntEl.textContent='搜索 "'+esc(kw)+'" · 实时';
-    app.innerHTML='<div class="loading"><div class="spinner"></div><p>正在源站实时搜索…</p></div>';
-    fetch('/api/list?s='+encodeURIComponent(kw))
-      .then(function(r){return r.json()})
-      .then(function(d){
-        var items=d.items||[];
-        if(!items.length){app.innerHTML='<div class="empty">源站没有找到匹配内容</div>';return;}
-        cntEl.textContent=items.length+' 条结果 · "'+esc(kw)+'"';
-        app.innerHTML=gridHTML(items);
-        wireCards();
-      })
-      .catch(function(e){
-        app.innerHTML='<div class="empty">搜索失败：'+esc(e.message)+'</div>';
-      });
-  }
 
   // 图集页: 实时拉源站大图
   function renderAlbum(pid){
@@ -351,13 +333,6 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
       });
   }
 
-  var searchTimer=null;
-  qEl.addEventListener('input',function(){
-    var kw=this.value.trim();
-    if(searchTimer)clearTimeout(searchTimer);
-    if(!kw){renderHome();return;}
-    searchTimer=setTimeout(function(){renderSearch(kw)},500);
-  });
 
   function render(){
     var route=parseHash();
