@@ -101,38 +101,68 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
 <div id="lb">
   <div class="lbclose" id="lbclose">×</div>
   <div class="lbprev" id="lbprev">‹</div>
-  <img id="lbimg" alt="">
+  <img id="lbimg" alt="" title="点击下一张">
   <div class="lbnext" id="lbnext">›</div>
   <div class="lbcap" id="lbcap"></div>
+  <div class="lbctrl">
+    <button id="lbmanual" class="chip" style="cursor:pointer">手动</button>
+    <button id="lbslide" class="chip" style="cursor:pointer">▶ 幻灯片</button>
+  </div>
 </div>
 
 <script>
 (function(){
-  var DATA=null,ALBUMS=[],GROUPS=[];
-  var state={group:'',q:''};
+  var GROUPS=[];            // 专题导航 [{slug,name}] 来自源站首页实时数据
   var app=document.getElementById('app');
   var qEl=document.getElementById('q');
   var cntEl=document.getElementById('cnt');
   var chipsEl=document.getElementById('chips');
 
-  // ---------- 灯箱 ----------
+  function proxyImg(u){return '/img?u='+encodeURIComponent(u)}
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+
+  // ================= 灯箱 (全屏 + 点击切图 + 手动/幻灯片控制) =================
   var lb=document.getElementById('lb'),lbimg=document.getElementById('lbimg'),
       lbcap=document.getElementById('lbcap');
-  var lbList=[],lbIdx=0;
+  var lbList=[],lbIdx=0,lbTimer=null;
+  var SLIDE_MS=3000;
+
   function lbShow(list,i){
     lbList=list;lbIdx=i;
     lbImgSet(i);
     lb.classList.add('show');
     document.body.style.overflow='hidden';
+    // 尝试进入浏览器原生全屏 (移动端体验)
+    try{
+      var el=document.documentElement;
+      if(el.requestFullscreen && i>0===false){/* 仅在用户手势下调用 */}
+    }catch(e){}
   }
   function lbImgSet(i){
     if(i<0||i>=lbList.length)return;
     lbIdx=i;
-    var u=lbList[i];
-    lbimg.src=u;
+    lbimg.src=proxyImg(lbList[i]);
     lbcap.textContent=(i+1)+' / '+lbList.length;
+    lbimg.onload=function(){};
   }
-  function lbHide(){lb.classList.remove('show');lbimg.src='';document.body.style.overflow='';}
+  function lbStopSlide(){
+    if(lbTimer){clearInterval(lbTimer);lbTimer=null;}
+    var btn=document.getElementById('lbslide');
+    if(btn)btn.textContent='▶ 幻灯片';
+  }
+  function lbToggleSlide(){
+    if(lbTimer){lbStopSlide();return;}
+    var btn=document.getElementById('lbslide');
+    if(btn)btn.textContent='⏸ 暂停';
+    lbTimer=setInterval(function(){lbImgSet(lbIdx+1>=lbList.length?lbIdx:lbIdx+1);},SLIDE_MS);
+  }
+  function lbHide(){
+    lbStopSlide();
+    lb.classList.remove('show');lbimg.src='';document.body.style.overflow='';
+    try{if(document.fullscreenElement)document.exitFullscreen()}catch(e){}
+  }
+  // 点击图片本身 -> 下一张
+  lbimg.addEventListener('click',function(){lbImgSet(lbIdx+1>=lbList.length?lbIdx:lbIdx+1)});
   // 移动端左右滑动切换
   var swX=null,swY=null;
   lb.addEventListener('touchstart',function(e){
@@ -144,25 +174,24 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
     var dx=e.changedTouches[0].clientX-swX,dy=e.changedTouches[0].clientY-swY;
     swX=swY=null;
     if(Math.abs(dx)>40&&Math.abs(dy)<80){
-      if(dx<0)lbImgSet(lbIdx+1);else lbImgSet(lbIdx-1);
+      if(dx<0)lbImgSet(lbIdx+1>=lbList.length?lbIdx:lbIdx+1);
+      else lbImgSet(lbIdx-1);
     }
   },{passive:true});
   document.getElementById('lbclose').onclick=lbHide;
   document.getElementById('lbprev').onclick=function(){lbImgSet(lbIdx-1)};
-  document.getElementById('lbnext').onclick=function(){lbImgSet(lbIdx+1)};
+  document.getElementById('lbnext').onclick=function(){lbImgSet(lbIdx+1>=lbList.length?lbIdx:lbIdx+1)};
+  document.getElementById('lbslide').onclick=lbToggleSlide;
+  document.getElementById('lbmanual').onclick=function(){lbStopSlide()};
   lb.onclick=function(e){if(e.target===lb)lbHide()};
   document.addEventListener('keydown',function(e){
     if(!lb.classList.contains('show'))return;
     if(e.key==='Escape')lbHide();
     if(e.key==='ArrowLeft')lbImgSet(lbIdx-1);
-    if(e.key==='ArrowRight')lbImgSet(lbIdx+1);
+    if(e.key==='ArrowRight')lbImgSet(lbIdx+1>=lbList.length?lbIdx:lbIdx+1);
   });
 
-  function proxyImg(u){return '/img?u='+encodeURIComponent(u)}
-
-  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
-
-  // ---------- 路由 ----------
+  // ================= 路由 =================
   function parseHash(){
     var h=location.hash||'';
     var m=h.match(/^#\/group\/(\w+)/);
@@ -172,84 +201,122 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
     return{view:'home'};
   }
 
-  function filtered(){
-    var q=state.q.trim().toLowerCase();
-    return ALBUMS.filter(function(a){
-      if(state.group && a.group!==state.group)return false;
-      if(q){
-        var hay=(a.title+' '+a.model).toLowerCase();
-        if(hay.indexOf(q)<0)return false;
-      }
-      return true;
-    });
-  }
-
   function cardHTML(a){
     var cover=a.cover?proxyImg(a.cover):'';
     var coverImg=cover?'<img loading="lazy" src="'+cover+'" alt="">':'';
-    return '<div class="card" data-pid="'+a.id+'">'
+    return '<div class="card" data-pid="'+a.pid+'">'
       +'<div class="cover">'+coverImg+'</div>'
       +'<div class="meta">'
       +'<div class="m-title" title="'+esc(a.title)+'">'+esc(a.title||'未命名')+'</div>'
       +'<div class="m-sub">'
       +(a.model?'<span class="badge">'+esc(a.model)+'</span>':'')
       +(a.date?'<span class="badge">'+esc(a.date)+'</span>':'')
-      +'<span class="badge">'+esc(a.group)+'</span>'
       +'</div>'
       +'</div>'
       +'</div>';
   }
 
   function renderChips(){
-    var html='<span class="chip '+(state.group?'':'on')+'" data-g="">全部</span>';
+    var html='<span class="chip '+(parseHash().view!=='group'?'on':'')+'" data-slug="">全部</span>';
     for(var i=0;i<GROUPS.length;i++){
       var g=GROUPS[i];
-      html+='<span class="chip '+(state.group===g?'on':'')+'" data-g="'+esc(g)+'">'+esc(g)+'</span>';
+      var on=parseHash().view==='group'&&parseHash().group===g.slug;
+      html+='<span class="chip '+(on?'on':'')+'" data-slug="'+esc(g.slug)+'">'+esc(g.name)+'</span>';
     }
     chipsEl.innerHTML=html;
     chipsEl.querySelectorAll('.chip').forEach(function(c){
       c.onclick=function(){
-        state.group=this.getAttribute('data-g')||'';
-        // 如果在图集页就回到首页, 否则原地刷新
-        if(location.hash && location.hash.indexOf('#/album/')===0){
-          location.hash='';
-        }
-        render();
+        var s=this.getAttribute('data-slug');
+        if(s)location.hash='#/group/'+s;else location.hash='';
       };
     });
   }
 
-  function renderHome(list){
-    var html='';
-    if(!list.length){
-      html='<div class="empty">没有匹配的图集</div>';
-    }else{
-      var grid='';
-      for(var i=0;i<list.length;i++)grid+=cardHTML(list[i]);
-      html='<div class="grid">'+grid+'</div>';
-    }
-    app.innerHTML=html;
+  function gridHTML(items){
+    var g='';
+    for(var i=0;i<items.length;i++)g+=cardHTML(items[i]);
+    return g;
+  }
+  function wireCards(){
     app.querySelectorAll('.card').forEach(function(c){
       c.onclick=function(){location.hash='#/album/'+this.getAttribute('data-pid')};
     });
   }
-
-  function renderGroup(name){
-    var list=ALBUMS.filter(function(a){return a.group===name});
-    cntEl.textContent=list.length+' 个图集 · '+esc(name);
-    var html='';
-    if(!list.length)html='<div class="empty">该分类下暂无图集</div>';
-    else{
-      var grid='';
-      for(var i=0;i<list.length;i++)grid+=cardHTML(list[i]);
-      html='<div class="grid">'+grid+'</div>';
-    }
-    app.innerHTML=html;
-    app.querySelectorAll('.card').forEach(function(c){
-      c.onclick=function(){location.hash='#/album/'+this.getAttribute('data-pid')};
-    });
+  function loadMoreBtn(hasMore){
+    if(!hasMore)return'';
+    return '<div style="text-align:center;margin:18px 0"><button class="chip on" id="loadmore" style="cursor:pointer">加载更多</button></div>';
   }
 
+  // 首页: 实时拉源站首页
+  function renderHome(){
+    cntEl.textContent='加载中…';
+    app.innerHTML='<div class="loading"><div class="spinner"></div><p>正在从源站实时加载…</p></div>';
+    fetch('/api/list')
+      .then(function(r){return r.json()})
+      .then(function(d){
+        GROUPS=d.groups||[];
+        renderChips();
+        var items=d.items||[];
+        cntEl.textContent=items.length+' 个图集 · 实时';
+        app.innerHTML=gridHTML(items)+loadMoreBtn(d.hasMore);
+        var lm=document.getElementById('loadmore');
+        if(lm)lm.onclick=function(){/* 首页仅展示第一屏 */};
+        wireCards();
+      })
+      .catch(function(e){
+        cntEl.textContent='';
+        app.innerHTML='<div class="empty">加载失败：'+esc(e.message)+'</div>';
+      });
+  }
+
+  // 专题页: 实时拉源站 /group/<slug>.html
+  function renderGroup(slug,page){
+    page=page||1;
+    cntEl.textContent='专题 '+esc(slug)+' · 第'+page+'页';
+    var keep=app.innerHTML; // 保留已有
+    if(page===1)app.innerHTML='<div class="loading"><div class="spinner"></div><p>正在从源站实时加载…</p></div>';
+    fetch('/api/list?g='+encodeURIComponent(slug)+'&page='+page)
+      .then(function(r){return r.json()})
+      .then(function(d){
+        var items=d.items||[];
+        var name=d.groupName||slug;
+        cntEl.textContent=name+' · 第'+page+'页 · '+items.length+'条';
+        var grid=gridHTML(items);
+        if(page===1)app.innerHTML='';
+        app.innerHTML=(page===1?'':'')+grid;
+        if(d.hasMore){
+          var b=document.createElement('div');
+          b.style.cssText='text-align:center;margin:18px 0';
+          b.innerHTML='<button class="chip on" style="cursor:pointer" id="loadmore">下一页</button>';
+          app.appendChild(b);
+          b.querySelector('#loadmore').onclick=function(){renderGroup(slug,page+1)};
+        }
+        wireCards();
+      })
+      .catch(function(e){
+        app.innerHTML='<div class="empty">加载失败：'+esc(e.message)+'</div>';
+      });
+  }
+
+  // 搜索: 实时拉源站 /?s=<kw>
+  function renderSearch(kw){
+    cntEl.textContent='搜索 "'+esc(kw)+'" · 实时';
+    app.innerHTML='<div class="loading"><div class="spinner"></div><p>正在源站实时搜索…</p></div>';
+    fetch('/api/list?s='+encodeURIComponent(kw))
+      .then(function(r){return r.json()})
+      .then(function(d){
+        var items=d.items||[];
+        if(!items.length){app.innerHTML='<div class="empty">源站没有找到匹配内容</div>';return;}
+        cntEl.textContent=items.length+' 条结果 · "'+esc(kw)+'"';
+        app.innerHTML=gridHTML(items);
+        wireCards();
+      })
+      .catch(function(e){
+        app.innerHTML='<div class="empty">搜索失败：'+esc(e.message)+'</div>';
+      });
+  }
+
+  // 图集页: 实时拉源站大图
   function renderAlbum(pid){
     app.innerHTML='<div class="loading"><div class="spinner"></div><p>正在从原站实时加载全部大图…</p></div>';
     cntEl.textContent='图集 '+esc(pid);
@@ -259,9 +326,8 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
         var list=d.images||[];
         var photos='';
         for(var i=0;i<list.length;i++){
-          var u=list[i];
           photos+='<div class="photo" data-i="'+i+'">'
-            +'<img loading="lazy" src="'+proxyImg(u)+'" alt="">'
+            +'<img loading="lazy" src="'+proxyImg(list[i])+'" alt="">'
             +'<div class="cap">'+(i+1)+' / '+list.length+'</div>'
             +'</div>';
         }
@@ -271,15 +337,13 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
             +'<div class="info">'
               +'<h2>'+esc(d.title||'图集 '+esc(pid))+'</h2>'
               +(d.model?'<p>模特：<span class="badge">'+esc(d.model)+'</span></p>':'')
-              +'<p>共 <strong>'+list.length+'</strong> 张大图</p>'
+              +'<p>共 <strong>'+list.length+'</strong> 张大图（点击大图可全屏/下一张）</p>'
             +'</div>'
             +'<div class="photos">'+(photos||'<div class="empty">未能获取大图</div>')+'</div>'
           +'</div>';
         document.getElementById('back').onclick=function(){history.back()};
         app.querySelectorAll('.photo').forEach(function(p){
-          p.onclick=function(){
-            lbShow(list,parseInt(this.getAttribute('data-i'),10));
-          };
+          p.onclick=function(){lbShow(list,parseInt(this.getAttribute('data-i'),10))};
         });
       })
       .catch(function(e){
@@ -287,42 +351,25 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
       });
   }
 
+  var searchTimer=null;
+  qEl.addEventListener('input',function(){
+    var kw=this.value.trim();
+    if(searchTimer)clearTimeout(searchTimer);
+    if(!kw){renderHome();return;}
+    searchTimer=setTimeout(function(){renderSearch(kw)},500);
+  });
+
   function render(){
     var route=parseHash();
     renderChips();
-    if(route.view==='album'){
-      renderAlbum(route.pid);
-    }else if(route.view==='group'){
-      renderGroup(route.group);
-    }else{
-      var list=filtered();
-      cntEl.textContent=list.length+' 个图集';
-      renderHome(list);
-    }
+    if(route.view==='album')renderAlbum(route.pid);
+    else if(route.view==='group')renderGroup(route.group,1);
+    else renderHome();
   }
 
-  qEl.addEventListener('input',function(){
-    state.q=this.value;
-    if(parseHash().view==='album')return;
-    var list=filtered();
-    cntEl.textContent=list.length+' 个图集';
-    renderHome(list);
-  });
-
-  window.addEventListener('hashchange',function(){
-    render();
-  });
-
-  // ---------- 加载数据 ----------
-  fetch('/data/site.json')
-    .then(function(r){return r.json()})
-    .then(function(d){
-      DATA=d;GROUPS=d.groups||[];ALBUMS=d.albums||[];
-      render();
-    })
-    .catch(function(e){
-      app.innerHTML='<div class="empty">数据加载失败：'+esc(e.message)+'</div>';
-    });
+  window.addEventListener('hashchange',render);
+  renderHome();
+  // 预取专题导航 (供 chips 用) —— 首页数据返回时已填充 GROUPS
 })();
 </script>
 </body>

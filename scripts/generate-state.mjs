@@ -117,10 +117,27 @@ async function main() {
   // 保存分类名列表
   writeFileSync(join(STATE_DIR, 'groups.json'), JSON.stringify(names, null, 2), 'utf-8');
 
+  // 1.5 抓取各分类页 <title> 提取中文名 (如 "兔几盟-最新写真图集60条")
+  const namesFile = join(STATE_DIR, 'group_names.json');
+  let groupNameZh = {};
+  if (existsSync(namesFile)) {
+    try { groupNameZh = JSON.parse(readFileSync(namesFile, 'utf-8')); } catch {}
+  }
+  for (const name of names) {
+    if (groupNameZh[name]) continue;
+    const html = await get(ORIGIN + `/group/${name}.html`);
+    if (!html) continue;
+    const t = html.match(/<title>([^<\-]+)/);
+    if (t) groupNameZh[name] = t[1].trim();
+    await throttle(0.3);
+  }
+  writeFileSync(namesFile, JSON.stringify(groupNameZh, null, 2), 'utf-8');
+  console.log(`分类中文名: ${JSON.stringify(groupNameZh, null, 2)}`);
+
   // 2. 逐个抓分类
   const allGroups = {};
   for (const name of names) {
-    console.log(`\n抓取分类: ${name}`);
+    console.log(`\n抓取分类: ${name} (${groupNameZh[name] || ''})`);
     allGroups[name] = await collectGroup(name);
   }
 

@@ -8,6 +8,12 @@
 [build.environment]
   NODE_VERSION = "18"
 
+# /api/list?s=<kw>&g=<slug>&page=N -> api-list 函数 (query 参数自动透传)
+[[redirects]]
+  from = "/api/list"
+  to = "/.netlify/functions/api-list"
+  status = 200
+
 # /api/album/<pid> -> api-album 函数 (pid 走 query 透传)
 [[redirects]]
   from = "/api/album/:pid"
