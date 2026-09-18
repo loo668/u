@@ -78,6 +78,8 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
   .detail .photos{grid-template-columns:repeat(2,1fr);gap:10px;min-width:0}
   .photo img{aspect-ratio:3/4}
   .back{margin:12px 0;padding:8px 0}
+  .gtitle{font-size:18px;margin:4px 0 12px}
+  .gtitle small{font-size:12px;color:#888;font-weight:400}
   /* 灯箱: 全屏, 左右滑动手势 */
   #lb img{max-width:100vw;max-height:78vh;border-radius:8px}
   #lb .lbprev,#lb .lbnext{font-size:34px;padding:24px 14px;opacity:.8}
@@ -91,6 +93,7 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
 <header>
   <div class="bar">
     <div class="logo">图集镜像</div>
+    <input id="q" type="search" placeholder="搜索标题 / 模特…" autocomplete="off">
     <span class="cnt" id="cnt"></span>
   </div>
   <div class="chips" id="chips"></div>
@@ -113,8 +116,9 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
 (function(){
   var GROUPS=[];            // 专题导航 [{slug,name}] 来自源站首页实时数据
   var app=document.getElementById('app');
-  // 搜索框已移除: 源站 /?s= 搜索不实际过滤(返回固定列表), /plus/search/ 404, 保留会误导用户
   var cntEl=document.getElementById('cnt');
+  var qEl=document.getElementById('q');
+  var searchTimer=null, inSearch=false, pool=null, poolLoading=null;
   var chipsEl=document.getElementById('chips');
 
   function proxyImg(u){return '/img?u='+encodeURIComponent(u)}
@@ -246,6 +250,48 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
     return '<div style="text-align:center;margin:18px 0"><button class="chip on" id="loadmore" style="cursor:pointer">加载更多</button></div>';
   }
 
+  // 搜索: 源站 /?s= 已失效(对任何关键词都返回同一组固定 30 条), 因此用"实时跨全部 23 个专题检索":
+  // 并行拉全部专题首页(源站真实数据, 服务端缓存 300s), 在本地按 标题/模特 过滤。
+  function buildPool(){
+    if(pool)return Promise.resolve(pool);
+    if(poolLoading)return poolLoading;
+    var slugs=GROUPS.map(function(g){return g.slug});
+    var jobs=slugs.map(function(s){
+      return fetch('/api/list?g='+encodeURIComponent(s)).then(function(r){return r.json()}).catch(function(){return {items:[]}});
+    });
+    jobs.push(fetch('/api/list').then(function(r){return r.json()}).catch(function(){return {items:[]}}));
+    poolLoading=Promise.all(jobs).then(function(resps){
+      var seen={},out=[];
+      resps.forEach(function(d){
+        (d.items||[]).forEach(function(it){
+          if(!it.pid||seen[it.pid])return;
+          it.group=(d.groupName||'') ;
+          seen[it.pid]=1;out.push(it);
+        });
+      });
+      poolLoading=null;
+      return pool=out;
+    });
+    return poolLoading;
+  }
+  function renderSearch(kw){
+    inSearch=true;
+    cntEl.textContent='搜索 "'+esc(kw)+'"…';
+    app.innerHTML='<div class="loading"><div class="spinner"></div><p>正在实时检索全部 '+GROUPS.length+' 个专题…</p></div>';
+    buildPool().then(function(items){
+      var k=kw.toLowerCase();
+      var hit=items.filter(function(it){
+        return (it.title||'').toLowerCase().indexOf(k)>=0||(it.model||'').toLowerCase().indexOf(k)>=0;
+      });
+      if(!hit.length){app.innerHTML='<div class="empty">在 '+items.length+' 条已加载条目中未找到 "'+esc(kw)+'"（源站搜索接口本身已失效，本站改为实时跨全部专题检索）</div>';cntEl.textContent='0 条结果';return;}
+      cntEl.textContent=hit.length+' 条结果 · 实时跨专题检索 · "'+esc(kw)+'"';
+      app.innerHTML=gridHTML(hit);
+      wireCards();
+    }).catch(function(e){
+      app.innerHTML='<div class="empty">搜索失败：'+esc(e.message)+'</div>';
+    });
+  }
+
   // 首页: 实时拉源站首页
   function renderHome(){
     cntEl.textContent='加载中…';
@@ -280,7 +326,8 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
         var items=d.items||[];
         var name=d.groupName||slug;
         cntEl.textContent=name+' · 第'+page+'页 · '+items.length+'条';
-        var grid=gridHTML(items);
+        var head='<h2 class="gtitle">'+esc(name)+' <small>· 第'+page+'页 · '+items.length+' 个图集 · 源站实时</small></h2>';
+        var grid=head+gridHTML(items);
         if(page===1)app.innerHTML='';
         app.innerHTML=(page===1?'':'')+grid;
         if(d.hasMore){
@@ -335,6 +382,7 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
 
 
   function render(){
+    inSearch=false;
     var route=parseHash();
     renderChips();
     if(route.view==='album')renderAlbum(route.pid);
@@ -343,6 +391,12 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
   }
 
   window.addEventListener('hashchange',render);
+  qEl.addEventListener('input',function(){
+    var kw=this.value.trim();
+    if(searchTimer)clearTimeout(searchTimer);
+    if(!kw){inSearch=false;render();return;}
+    searchTimer=setTimeout(function(){renderSearch(kw)},400);
+  });
   renderHome();
   // 预取专题导航 (供 chips 用) —— 首页数据返回时已填充 GROUPS
 })();
