@@ -64,9 +64,10 @@ export default async (req) => {
       // 首页同时返回专题导航
       out.groups = parseGroups(html);
     } else if (g) {
-      // 专题页返回该专题中文名(取 <title> 中 "-" 前)
-      const t = html.match(/<title>([^<]*)<\/title>/);
-      out.groupName = t ? (t[1].split('-')[0].trim() || g) : g;
+      // 专题页返回该专题中文名: 优先取首页 groups 映射 (源站 group 页 <title> 结构不一致, 不可靠)
+      const homeHtml = await fetchSource('/').catch(() => '');
+      const gm = parseGroups(homeHtml).find((x) => x.slug === g);
+      out.groupName = gm ? gm.name : g;
     }
 
     return jmsg(out, 200, {
