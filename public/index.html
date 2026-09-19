@@ -255,23 +255,34 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
   function buildPool(){
     if(pool)return Promise.resolve(pool);
     if(poolLoading)return poolLoading;
-    var slugs=GROUPS.map(function(g){return g.slug});
-    var jobs=slugs.map(function(s){
-      return fetch('/api/list?g='+encodeURIComponent(s)).then(function(r){return r.json()}).catch(function(){return {items:[]}});
-    });
-    jobs.push(fetch('/api/list').then(function(r){return r.json()}).catch(function(){return {items:[]}}));
-    poolLoading=Promise.all(jobs).then(function(resps){
-      var seen={},out=[];
-      resps.forEach(function(d){
-        (d.items||[]).forEach(function(it){
-          if(!it.pid||seen[it.pid])return;
-          it.group=(d.groupName||'') ;
-          seen[it.pid]=1;out.push(it);
+    // 必须等首页返回并填充 GROUPS 后才能拉全部专题 —— 否则首次搜索时 GROUPS 为空, 池子只有 30 条
+    poolLoading=fetch('/api/list')
+      .then(function(r){return r.json()})
+      .then(function(d){
+        if(!pool){
+          GROUPS=d.groups||[];
+          renderChips();
+        }
+        var slugs=(GROUPS||[]).map(function(g){return g.slug});
+        var jobs=slugs.map(function(s){
+          return fetch('/api/list?g='+encodeURIComponent(s)).then(function(r){return r.json()}).catch(function(){return {items:[]}});
         });
-      });
-      poolLoading=null;
-      return pool=out;
-    });
+        jobs.push(Promise.resolve(d)); // 首页那份数据也算进池子
+        return Promise.all(jobs).then(function(resps){
+          var seen={},out=[];
+          resps.forEach(function(resp){
+            var d2=resp||{};
+            (d2.items||[]).forEach(function(it){
+              if(!it.pid||seen[it.pid])return;
+              it.group=d2.groupName||it.group||'';
+              seen[it.pid]=1;out.push(it);
+            });
+          });
+          poolLoading=null;
+          return pool=out;
+        });
+      })
+      .catch(function(e){poolLoading=null;throw e;});
     return poolLoading;
   }
   function renderSearch(kw){
