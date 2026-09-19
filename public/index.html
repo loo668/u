@@ -264,20 +264,31 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
           renderChips();
         }
         var slugs=(GROUPS||[]).map(function(g){return g.slug});
+        // 每个专题拉前 3 页(每页 30 条), 把搜索池从 ~607 条扩到 ~1800 条; 服务端 300s 缓存, 重复搜秒开
         var jobs=slugs.map(function(s){
-          return fetch('/api/list?g='+encodeURIComponent(s)).then(function(r){return r.json()}).catch(function(){return {items:[]}});
+          var ps=[1,2,3].map(function(p){
+            return fetch('/api/list?g='+encodeURIComponent(s)+'&page='+p).then(function(r){return r.json()}).catch(function(){return {items:[]}});
+          });
+          return Promise.all(ps);
         });
         jobs.push(Promise.resolve(d)); // 首页那份数据也算进池子
         return Promise.all(jobs).then(function(resps){
           var seen={},out=[];
-          resps.forEach(function(resp){
-            var d2=resp||{};
-            (d2.items||[]).forEach(function(it){
-              if(!it.pid||seen[it.pid])return;
-              it.group=d2.groupName||it.group||'';
-              seen[it.pid]=1;out.push(it);
+          // resps: 每个专题是 [页1,页2,页3] 三层嵌套数组, 首页那份是单个对象 → 递归摊平
+          function eachObj(arr){
+            (arr||[]).forEach(function(x){
+              if(Array.isArray(x))eachObj(x);
+              else{
+                var d2=x||{};
+                (d2.items||[]).forEach(function(it){
+                  if(!it.pid||seen[it.pid])return;
+                  it.group=d2.groupName||it.group||'';
+                  seen[it.pid]=1;out.push(it);
+                });
+              }
             });
-          });
+          }
+          eachObj(resps);
           poolLoading=null;
           return pool=out;
         });
