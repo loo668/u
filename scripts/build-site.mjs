@@ -1,20 +1,16 @@
-// 纯"壳"构建: 不再预爬任何数据。
-// 首页/专题/搜索/图集全部由 Netlify 函数在运行时实时代理到源站 (meirentu.cc)。
-// 此步骤仅保证 public/ 目录存在并清理旧的静态数据, 使部署自包含、与 state/ 解耦。
-import { existsSync, rmSync } from 'fs';
+// 纯"壳"构建: 首页/专题/图集 全部由 Netlify 函数运行时实时代理源站 meirentu.cc。
+// 构建时额外全量爬取一份搜索索引 (public/data/search-index.json), 供前端"整站搜索"即时过滤。
+import { existsSync } from 'fs';
+import { spawn } from 'child_process';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 
-// 清理旧的预爬静态数据 (前端已不再使用 /data/site.json)
-const oldData = join(ROOT, 'public', 'data', 'site.json');
-if (existsSync(oldData)) rmSync(oldData, { force: true });
-// 若 public/data 目录因此为空, 一并移除
-const dataDir = join(ROOT, 'public', 'data');
-if (existsSync(dataDir)) {
-  rmSync(dataDir, { recursive: true, force: true });
-}
-
-console.log('构建完成: 纯实时代理壳 (无预爬数据, 数据全部来自源站运行时)');
+// 全量爬取搜索索引 (24h 缓存跳过; 失败不阻塞部署, 前端有实时池回退)
+console.log('[build] 生成搜索索引…');
+const child = spawn('node', [join(__dirname, 'crawl-search-index.mjs')], { stdio:'inherit', cwd:ROOT });
+await new Promise((resolve, reject) => { child.on('close', c => c===0?resolve():reject(new Error('crawler exit '+c))); child.on('error', reject); });
+console.log('[build] 搜索索引就绪 (public/data/search-index.json)');
+console.log('[build] 构建完成: 实时代理壳 + 离线搜索索引');

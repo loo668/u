@@ -119,6 +119,16 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
   var cntEl=document.getElementById('cnt');
   var qEl=document.getElementById('q');
   var searchTimer=null, inSearch=false, pool=null, poolLoading=null;
+  var globalIndex=null, globalIndexLoading=null;
+  function loadGlobalIndex(){
+    if(globalIndex)return Promise.resolve(globalIndex);
+    if(globalIndexLoading)return globalIndexLoading;
+    globalIndexLoading=fetch('/data/search-index.json')
+      .then(function(r){return r.ok?r.json():null})
+      .then(function(d){globalIndex=d;return d})
+      .catch(function(){return null});
+    return globalIndexLoading;
+  }
   var chipsEl=document.getElementById('chips');
 
   function proxyImg(u){return '/img?u='+encodeURIComponent(u)}
@@ -250,8 +260,9 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
     return '<div style="text-align:center;margin:18px 0"><button class="chip on" id="loadmore" style="cursor:pointer">加载更多</button></div>';
   }
 
-  // 搜索: 源站 /?s= 已失效(对任何关键词都返回同一组固定 30 条), 因此用"实时跨全部 23 个专题检索":
-  // 并行拉全部专题首页(源站真实数据, 服务端缓存 300s), 在本地按 标题/模特 过滤。
+  // 搜索: 源站 /?s= 已失效(对任何关键词都返回同一组固定 30 条)。
+  // 主路径: 构建时离线全量索引 /data/search-index.json (整站 ~9600 条, 即时本地过滤);
+  // 回退: 实时跨全部专题池 buildPool (索引不可用时)。
   function buildPool(){
     if(pool)return Promise.resolve(pool);
     if(poolLoading)return poolLoading;
@@ -299,16 +310,31 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
   function renderSearch(kw){
     inSearch=true;
     cntEl.textContent='搜索 "'+esc(kw)+'"…';
-    app.innerHTML='<div class="loading"><div class="spinner"></div><p>正在实时检索全部 '+GROUPS.length+' 个专题…</p></div>';
-    buildPool().then(function(items){
+    app.innerHTML='<div class="loading"><div class="spinner"></div><p>正在全站搜索…</p></div>';
+    loadGlobalIndex().then(function(idx){
       var k=kw.toLowerCase();
-      var hit=items.filter(function(it){
-        return (it.title||'').toLowerCase().indexOf(k)>=0||(it.model||'').toLowerCase().indexOf(k)>=0;
+      // 主路径: 离线索引 (整站)
+      if(idx && idx.items && idx.items.length){
+        var hit=idx.items.filter(function(it){
+          return ((it.t||'').toLowerCase().indexOf(k)>=0)||((it.m||'').toLowerCase().indexOf(k)>=0);
+        });
+        var cards=hit.map(function(it){return {pid:it.pid,title:it.t,model:it.m,cover:it.c,group:it.g};});
+        if(!cards.length){app.innerHTML='<div class="empty">在整站 '+idx.count+' 条中未找到 "'+esc(kw)+'"</div>';cntEl.textContent='0 条结果';return;}
+        cntEl.textContent=cards.length+' 条结果 · 全站 · "'+esc(kw)+'"';
+        app.innerHTML=gridHTML(cards);
+        wireCards();
+        return;
+      }
+      // 回退: 实时池
+      return buildPool().then(function(items){
+        var hit=items.filter(function(it){
+          return (it.title||'').toLowerCase().indexOf(k)>=0||(it.model||'').toLowerCase().indexOf(k)>=0;
+        });
+        if(!hit.length){app.innerHTML='<div class="empty">在 '+items.length+' 条已加载条目中未找到 "'+esc(kw)+'"（源站搜索接口已失效，改为实时跨专题检索）</div>';cntEl.textContent='0 条结果';return;}
+        cntEl.textContent=hit.length+' 条结果 · 实时跨专题 · "'+esc(kw)+'"';
+        app.innerHTML=gridHTML(hit);
+        wireCards();
       });
-      if(!hit.length){app.innerHTML='<div class="empty">在 '+items.length+' 条已加载条目中未找到 "'+esc(kw)+'"（源站搜索接口本身已失效，本站改为实时跨全部专题检索）</div>';cntEl.textContent='0 条结果';return;}
-      cntEl.textContent=hit.length+' 条结果 · 实时跨专题检索 · "'+esc(kw)+'"';
-      app.innerHTML=gridHTML(hit);
-      wireCards();
     }).catch(function(e){
       app.innerHTML='<div class="empty">搜索失败：'+esc(e.message)+'</div>';
     });
@@ -336,32 +362,50 @@ header .cnt{color:var(--sub);font-size:12px;white-space:nowrap}
       });
   }
 
-  // 专题页: 实时拉源站 /group/<slug>.html
+  // 专题页: 实时拉源站 /group/<slug>.html (第 1 页重建, 后续页追加)
   function renderGroup(slug,page){
     page=page||1;
     cntEl.textContent='专题 '+esc(slug)+' · 第'+page+'页';
-    var keep=app.innerHTML; // 保留已有
-    if(page===1)app.innerHTML='<div class="loading"><div class="spinner"></div><p>正在从源站实时加载…</p></div>';
+    if(page===1){
+      app.innerHTML='<div class="loading"><div class="spinner"></div><p>正在从源站实时加载…</p></div>';
+    } else {
+      var old=app.querySelector('#loadmore'); if(old)old.remove();
+      var s=document.createElement('div');
+      s.className='loading'; s.style.margin='14px 0';
+      s.innerHTML='<div class="spinner"></div>';
+      app.appendChild(s);
+    }
     fetch('/api/list?g='+encodeURIComponent(slug)+'&page='+page)
       .then(function(r){return r.json()})
       .then(function(d){
         var items=d.items||[];
         var name=d.groupName||slug;
         cntEl.textContent=name+' · 第'+page+'页 · '+items.length+'条';
-        var head='<h2 class="gtitle">'+esc(name)+' <small>· 第'+page+'页 · '+items.length+' 个图集 · 源站实时</small></h2>';
-        var grid=head+gridHTML(items);
-        if(page===1)app.innerHTML='';
-        app.innerHTML=(page===1?'':'')+grid;
+        if(page===1){
+          var head='<h2 class="gtitle">'+esc(name)+' <small>· 第'+page+'页 · '+items.length+' 个图集 · 源站实时</small></h2>';
+          app.innerHTML=head+gridHTML(items);
+        } else {
+          var spinner=app.querySelector('.loading'); if(spinner)spinner.remove();
+          var wrap=document.createElement('div');
+          wrap.innerHTML=gridHTML(items);
+          while(wrap.firstChild)app.appendChild(wrap.firstChild);
+        }
+        var done=app.querySelector('#loadmore'); if(done)done.remove();
         if(d.hasMore){
           var b=document.createElement('div');
           b.style.cssText='text-align:center;margin:18px 0';
-          b.innerHTML='<button class="chip on" style="cursor:pointer" id="loadmore">下一页</button>';
+          b.innerHTML='<button class="chip on" style="cursor:pointer" id="loadmore">下一页 · '+esc(name)+'</button>';
           app.appendChild(b);
           b.querySelector('#loadmore').onclick=function(){renderGroup(slug,page+1)};
+        } else {
+          var end=document.createElement('div');
+          end.className='done'; end.textContent='— '+esc(name)+' 已加载全部 '+(d.total||'?')+' 个图集 —';
+          app.appendChild(end);
         }
         wireCards();
       })
       .catch(function(e){
+        cntEl.textContent='';
         app.innerHTML='<div class="empty">加载失败：'+esc(e.message)+'</div>';
       });
   }
